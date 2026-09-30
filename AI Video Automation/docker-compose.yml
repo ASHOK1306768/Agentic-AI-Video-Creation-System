@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  # N8N Workflow Engine
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: video-agent-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD:-secure_password}
+      - N8N_HOST=localhost
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - EXECUTIONS_DATA_PRUNE=true
+      - EXECUTIONS_DATA_MAX_AGE=7d
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./outputs:/files
+      - ./outputs:/app/outputs
+    networks:
+      - video-agent-network
+    restart: unless-stopped
+
+  # Python Worker for Video Generation & Local Agents
+  python-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: video-agent-python
+    ports:
+      - "5000:5000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PEXELS_API_KEY=${PEXELS_API_KEY}
+      - PIXABAY_API_KEY=${PIXABAY_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/credentials.json
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OUTPUT_DIRECTORY=/app/outputs
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./scripts:/app
+      - ./outputs:/app/outputs
+      - ./outputs:/files
+    networks:
+      - video-agent-network
+    restart: unless-stopped
+    depends_on:
+      - ollama
+
+  # Ollama - Local LLM Server
+  ollama:
+    image: ollama/ollama:latest
+    container_name: video-agent-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    networks:
+      - video-agent-network
+    restart: unless-stopped
+
+volumes:
+  n8n_data:
+  ollama_data:
+
+networks:
+  video-agent-network:
+    driver: bridge
